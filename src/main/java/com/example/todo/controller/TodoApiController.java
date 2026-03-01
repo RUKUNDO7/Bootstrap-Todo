@@ -1,12 +1,14 @@
 package com.example.todo.controller;
 
 import com.example.todo.model.TodoItem;
+import com.example.todo.security.AppUserPrincipal;
 import com.example.todo.service.TodoService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,41 +32,50 @@ public class TodoApiController {
     this.service = service;
   }
 
+  private Long ownerId(AppUserPrincipal principal) {
+    return principal.getId();
+  }
+
   @GetMapping
-  public List<TodoItem> list() {
-    return service.findAll();
+  public List<TodoItem> list(@AuthenticationPrincipal AppUserPrincipal principal) {
+    return service.findAll(ownerId(principal));
   }
 
   @GetMapping("/{id}")
-  public ResponseEntity<TodoItem> getById(@PathVariable long id) {
-    return service.findById(id)
+  public ResponseEntity<TodoItem> getById(@AuthenticationPrincipal AppUserPrincipal principal,
+                                          @PathVariable long id) {
+    return service.findById(ownerId(principal), id)
         .map(ResponseEntity::ok)
         .orElse(ResponseEntity.notFound().build());
   }
 
   @GetMapping("/title/{title}")
-  public List<TodoItem> getByTitle(@PathVariable String title) {
-    return service.findByTitle(title);
+  public List<TodoItem> getByTitle(@AuthenticationPrincipal AppUserPrincipal principal,
+                                   @PathVariable String title) {
+    return service.findByTitle(ownerId(principal), title);
   }
 
   @PostMapping
-  public ResponseEntity<TodoItem> create(@Valid @RequestBody CreateTodoRequest request) {
-    TodoItem created = service.add(request.title().trim());
+  public ResponseEntity<TodoItem> create(@AuthenticationPrincipal AppUserPrincipal principal,
+                                         @Valid @RequestBody CreateTodoRequest request) {
+    TodoItem created = service.add(ownerId(principal), request.title().trim());
     return ResponseEntity.status(HttpStatus.CREATED).body(created);
   }
 
   @PutMapping("/{id}")
-  public ResponseEntity<TodoItem> updateById(@PathVariable long id,
+  public ResponseEntity<TodoItem> updateById(@AuthenticationPrincipal AppUserPrincipal principal,
+                                             @PathVariable long id,
                                              @Valid @RequestBody UpdateTodoRequest request) {
-    return service.update(id, request.title().trim(), request.status())
+    return service.update(ownerId(principal), id, request.title().trim(), request.status())
         .map(ResponseEntity::ok)
         .orElse(ResponseEntity.notFound().build());
   }
 
   @PutMapping("/title/{title}")
-  public ResponseEntity<List<TodoItem>> updateByTitle(@PathVariable String title,
+  public ResponseEntity<List<TodoItem>> updateByTitle(@AuthenticationPrincipal AppUserPrincipal principal,
+                                                      @PathVariable String title,
                                                       @Valid @RequestBody UpdateTodoRequest request) {
-    List<TodoItem> updated = service.updateByTitle(title, request.title().trim(), request.status());
+    List<TodoItem> updated = service.updateByTitle(ownerId(principal), title, request.title().trim(), request.status());
     if (updated.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
@@ -72,27 +83,30 @@ public class TodoApiController {
   }
 
   @PatchMapping("/{id}/status")
-  public ResponseEntity<TodoItem> toggle(@PathVariable long id) {
-    return service.toggle(id)
+  public ResponseEntity<TodoItem> toggle(@AuthenticationPrincipal AppUserPrincipal principal,
+                                         @PathVariable long id) {
+    return service.toggle(ownerId(principal), id)
         .map(ResponseEntity::ok)
         .orElse(ResponseEntity.notFound().build());
   }
 
   @DeleteMapping("/{id}")
-  public ResponseEntity<Void> delete(@PathVariable long id) {
-    boolean removed = service.delete(id);
+  public ResponseEntity<Void> delete(@AuthenticationPrincipal AppUserPrincipal principal,
+                                     @PathVariable long id) {
+    boolean removed = service.delete(ownerId(principal), id);
     return removed ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
   }
 
   @DeleteMapping("/title/{title}")
-  public ResponseEntity<Void> deleteByTitle(@PathVariable String title) {
-    long removed = service.deleteByTitle(title);
+  public ResponseEntity<Void> deleteByTitle(@AuthenticationPrincipal AppUserPrincipal principal,
+                                            @PathVariable String title) {
+    long removed = service.deleteByTitle(ownerId(principal), title);
     return removed > 0 ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
   }
 
   @DeleteMapping("/status/true")
-  public ResponseEntity<Void> clearCompleted() {
-    service.clearCompleted();
+  public ResponseEntity<Void> clearCompleted(@AuthenticationPrincipal AppUserPrincipal principal) {
+    service.clearCompleted(ownerId(principal));
     return ResponseEntity.noContent().build();
   }
 
