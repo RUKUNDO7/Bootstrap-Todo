@@ -1,16 +1,14 @@
 package com.example.todo.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Column;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.validation.constraints.NotBlank;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "todo_items")
@@ -25,19 +23,17 @@ public class TodoItem {
   @Column(name = "status")
   private boolean status;
 
-  @JsonIgnore
-  @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "owner_id")
-  private UserAccount owner;
+  @Column(name = "due_at")
+  private LocalDateTime dueAt;
 
   public TodoItem() {
   }
 
-  public TodoItem(Long id, String title, boolean status, UserAccount owner) {
+  public TodoItem(Long id, String title, boolean status, LocalDateTime dueAt) {
     this.id = id;
     this.title = title;
     this.status = status;
-    this.owner = owner;
+    this.dueAt = dueAt;
   }
 
   public Long getId() {
@@ -64,11 +60,11 @@ public class TodoItem {
     this.status = status;
   }
 
-  public UserAccount getOwner() {
-    return owner;
+  public LocalDateTime getDueAt() {
+    return dueAt;
   }
 
-  public void setOwner(UserAccount owner) {
-    this.owner = owner;
+  public void setDueAt(LocalDateTime dueAt) {
+    this.dueAt = dueAt;
   }
 }

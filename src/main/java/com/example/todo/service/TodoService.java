@@ -1,81 +1,88 @@
 package com.example.todo.service;
 
 import com.example.todo.model.TodoItem;
-import com.example.todo.model.UserAccount;
 import com.example.todo.repository.TodoRepository;
-import com.example.todo.repository.UserAccountRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 public class TodoService {
   private final TodoRepository repository;
-  private final UserAccountRepository userAccountRepository;
 
-  public TodoService(TodoRepository repository, UserAccountRepository userAccountRepository) {
+  public TodoService(TodoRepository repository) {
     this.repository = repository;
-    this.userAccountRepository = userAccountRepository;
   }
 
-  public List<TodoItem> findAll(Long ownerId) {
+  public List<TodoItem> findAll() {
     Sort sort = Sort.by(Sort.Order.asc("status"), Sort.Order.asc("id"));
-    return repository.findByOwnerId(ownerId, sort);
+    return repository.findAll(sort);
   }
 
-  public List<TodoItem> findByTitle(Long ownerId, String title) {
-    return repository.findByOwnerIdAndTitleContainingIgnoreCase(ownerId, title);
+  public List<TodoItem> findByTitle(String title) {
+    Sort sort = Sort.by(Sort.Order.asc("status"), Sort.Order.asc("id"));
+    return repository.findByTitleContainingIgnoreCase(title, sort);
   }
 
-  public TodoItem add(Long ownerId, String title) {
-    UserAccount owner = userAccountRepository.findById(ownerId).orElseThrow();
-    TodoItem item = new TodoItem(null, title, false, owner);
+  public TodoItem add(String title, LocalDateTime dueAt) {
+    TodoItem item = new TodoItem();
+    item.setTitle(title);
+    item.setStatus(false);
+    item.setDueAt(dueAt);
     return repository.save(item);
   }
 
-  public Optional<TodoItem> findById(Long ownerId, long id) {
-    return repository.findByIdAndOwnerId(id, ownerId);
+  public Optional<TodoItem> findById(long id) {
+    return repository.findById(id);
   }
 
   @Transactional
-  public Optional<TodoItem> update(Long ownerId, long id, String title, boolean status) {
-    Optional<TodoItem> item = repository.findByIdAndOwnerId(id, ownerId);
+  public Optional<TodoItem> update(long id, String title, boolean status, LocalDateTime dueAt) {
+    Optional<TodoItem> item = repository.findById(id);
     item.ifPresent(i -> {
       i.setTitle(title);
       i.setStatus(status);
+      i.setDueAt(dueAt);
     });
     return item;
   }
 
   @Transactional
-  public List<TodoItem> updateByTitle(Long ownerId, String title, String newTitle, boolean status) {
-    List<TodoItem> items = repository.findByOwnerIdAndTitleIgnoreCase(ownerId, title);
+  public List<TodoItem> updateByTitle(String title, String newTitle, boolean status, LocalDateTime dueAt) {
+    List<TodoItem> items = repository.findByTitleIgnoreCase(title);
     items.forEach(i -> {
       i.setTitle(newTitle);
       i.setStatus(status);
+      i.setDueAt(dueAt);
     });
     return repository.saveAll(items);
   }
 
   @Transactional
-  public Optional<TodoItem> toggle(Long ownerId, long id) {
-    Optional<TodoItem> item = repository.findByIdAndOwnerId(id, ownerId);
+  public Optional<TodoItem> toggle(long id) {
+    Optional<TodoItem> item = repository.findById(id);
     item.ifPresent(i -> i.setStatus(!i.isStatus()));
     return item;
   }
 
-  public boolean delete(Long ownerId, long id) {
-    return repository.deleteByIdAndOwnerId(id, ownerId) > 0;
+  public boolean delete(long id) {
+    Optional<TodoItem> item = repository.findById(id);
+    if (item.isEmpty()) {
+      return false;
+    }
+    repository.delete(item.get());
+    return true;
   }
 
-  public long deleteByTitle(Long ownerId, String title) {
-    return repository.deleteByOwnerIdAndTitleIgnoreCase(ownerId, title);
+  public long deleteByTitle(String title) {
+    return repository.deleteByTitleIgnoreCase(title);
   }
 
-  public void clearCompleted(Long ownerId) {
-    repository.deleteByOwnerIdAndStatusTrue(ownerId);
+  public void clearCompleted() {
+    repository.deleteByStatusTrue();
   }
 }
