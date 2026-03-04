@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS public.todo_items
+  ADD COLUMN IF NOT EXISTS due_at TIMESTAMP;
