@@ -250,6 +250,21 @@ body {
   min-width: 220px;
 }
 
+.due-field {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.field-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .search-input:focus,
 .task-input:focus,
 .edit-input:focus {
@@ -343,6 +358,69 @@ body {
   gap: 6px;
 }
 
+.icon-action {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.icon-action svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.icon-action:hover,
+.icon-action:focus-visible {
+  transform: var(--lift);
+}
+
+.icon-action.edit:hover,
+.icon-action.edit:focus-visible {
+  border-color: color-mix(in oklab, var(--brand) 40%, var(--line));
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.icon-action.delete {
+  border-color: color-mix(in oklab, var(--danger-text) 20%, var(--line));
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.icon-action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(3px);
+  opacity: 0;
+  pointer-events: none;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.icon-action:hover::after,
+.icon-action:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .mini-btn {
   padding: 7px 9px;
   font-size: 12px;
@@ -418,6 +496,10 @@ body {
   }
 
   .due-input {
+    min-width: 0;
+  }
+
+  .due-field {
     min-width: 0;
   }
 
