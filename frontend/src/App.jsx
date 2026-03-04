@@ -1,33 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const FILTERS = ["All", "Active", "Done"];
-const TOKEN_KEY = "todo_app_token";
-const USER_KEY = "todo_app_user";
-const THEME_KEY = "todo_theme";
 
-function loadSession() {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const userRaw = localStorage.getItem(USER_KEY);
-  if (!token || !userRaw) return null;
-
-  try {
-    const user = JSON.parse(userRaw);
-    return { token, user };
-  } catch {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    return null;
-  }
+function normalizeDueAtInput(value) {
+  return value ? `${value}:00` : null;
 }
 
-function persistSession(session) {
-  localStorage.setItem(TOKEN_KEY, session.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+function formatForDateTimeInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
-function clearSessionStorage() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+function formatDueAtDisplay(value) {
+  if (!value) return "No due date";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 async function parseResponseError(res, fallbackMessage) {
@@ -35,25 +32,20 @@ async function parseResponseError(res, fallbackMessage) {
     const body = await res.json();
     if (body?.message) return body.message;
   } catch {
-    // ignore parse errors and fallback to status text
+    // ignore and fall back
   }
   return fallbackMessage;
 }
 
-async function apiRequest(path, { method = "GET", body, token } = {}) {
+async function apiRequest(path, { method = "GET", body } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(path, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
-
-  if (res.status === 401) {
-    throw new Error("Session expired. Please log in again.");
-  }
 
   if (!res.ok) {
     throw new Error(await parseResponseError(res, "Request failed."));
@@ -64,45 +56,30 @@ async function apiRequest(path, { method = "GET", body, token } = {}) {
 }
 
 const api = {
-  signup(payload) {
-    return apiRequest("/auth/signup", { method: "POST", body: payload });
+  list() {
+    return apiRequest("/todos");
   },
-  login(payload) {
-    return apiRequest("/auth/login", { method: "POST", body: payload });
+  create(title, dueAt) {
+    return apiRequest("/todos", { method: "POST", body: { title, dueAt } });
   },
-  me(token) {
-    return apiRequest("/auth/me", { token });
+  toggle(id) {
+    return apiRequest(`/todos/${id}/status`, { method: "PATCH" });
   },
-  list(token) {
-    return apiRequest("/todos", { token });
+  remove(id) {
+    return apiRequest(`/todos/${id}`, { method: "DELETE" });
   },
-  create(token, title) {
-    return apiRequest("/todos", { method: "POST", body: { title }, token });
+  clearDone() {
+    return apiRequest("/todos/status/true", { method: "DELETE" });
   },
-  toggle(token, id) {
-    return apiRequest(`/todos/${id}/status`, { method: "PATCH", token });
-  },
-  remove(token, id) {
-    return apiRequest(`/todos/${id}`, { method: "DELETE", token });
-  },
-  clearDone(token) {
-    return apiRequest("/todos/status/true", { method: "DELETE", token });
-  },
-  update(token, id, payload) {
-    return apiRequest(`/todos/${id}`, { method: "PUT", body: payload, token });
+  update(id, payload) {
+    return apiRequest(`/todos/${id}`, { method: "PUT", body: payload });
   }
 };
 
 export default function App() {
-  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "light");
-  const [session, setSession] = useState(() => loadSession());
-  const [authMode, setAuthMode] = useState("signup");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState("");
-  const [authForm, setAuthForm] = useState({ username: "", email: "", password: "" });
-
   const [items, setItems] = useState([]);
   const [newTitle, setNewTitle] = useState("");
+  const [newDueAt, setNewDueAt] = useState("");
   const [searchText, setSearchText] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [loading, setLoading] = useState(false);
@@ -110,14 +87,24 @@ export default function App() {
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
-  const [savingEditId, setSavingEditId] = useState(null);
-  const [toasts, setToasts] = useState([]);
-  const toastCounter = useRef(0);
+  const [editDueAt, setEditDueAt] = useState("");
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+    const loadTodos = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api.list();
+        setItems(data);
+      } catch {
+        setError("Failed to load todos.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTodos();
+  }, []);
 
   const counts = useMemo(() => {
     const done = items.filter((item) => item.status).length;
@@ -139,342 +126,117 @@ export default function App() {
     return filtered;
   }, [items, activeFilter, searchText]);
 
-  const pushToast = (variant, message) => {
-    const id = ++toastCounter.current;
-    setToasts((prev) => [...prev, { id, variant, message }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 2600);
-  };
-
-  const forceLogout = (message) => {
-    clearSessionStorage();
-    setSession(null);
-    setItems([]);
-    setError("");
-    setAuthError(message);
-  };
-
-  const loadTodos = async (token) => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await api.list(token);
-      setItems(data);
-    } catch (err) {
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError("Failed to load todos.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!session?.token) return;
-    loadTodos(session.token);
-  }, [session?.token]);
-
-  useEffect(() => {
-    const verifyStoredSession = async () => {
-      if (!session?.token) return;
-      try {
-        const me = await api.me(session.token);
-        const updated = { token: session.token, user: me };
-        setSession(updated);
-        persistSession(updated);
-      } catch {
-        forceLogout("Your session is no longer valid.");
-      }
-    };
-
-    verifyStoredSession();
-  }, []);
-
-  const onAuthSubmit = async (event) => {
-    event.preventDefault();
-    if (authLoading) return;
-
-    const username = authForm.username.trim();
-    const email = authForm.email.trim().toLowerCase();
-    const password = authForm.password;
-    if (!username || !password || (authMode === "signup" && !email)) {
-      setAuthError("All required fields must be filled.");
-      return;
-    }
-
-    setAuthLoading(true);
-    setAuthError("");
-    try {
-      const payload = authMode === "signup" ? { username, email, password } : { username, password };
-      const result = authMode === "signup" ? await api.signup(payload) : await api.login(payload);
-      const nextSession = { token: result.token, user: result.user };
-      setSession(nextSession);
-      persistSession(nextSession);
-      setAuthForm({ username: "", email: "", password: "" });
-      pushToast("success", authMode === "signup" ? "Account created." : "Welcome back.");
-    } catch (err) {
-      setAuthError(err.message);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const onLogout = () => {
-    clearSessionStorage();
-    setSession(null);
-    setItems([]);
-    setAuthMode("signup");
-    setAuthError("");
-  };
-
   const onAdd = async (event) => {
     event.preventDefault();
     const title = newTitle.trim();
-    if (!title || submitting || !session?.token) return;
+    if (!title || submitting) return;
+    const dueAt = normalizeDueAtInput(newDueAt);
 
     setSubmitting(true);
     setError("");
     const tempId = -Date.now();
-    setItems((prev) => [...prev, { id: tempId, title, status: false }]);
+    setItems((prev) => [...prev, { id: tempId, title, status: false, dueAt }]);
     setNewTitle("");
+    setNewDueAt("");
 
     try {
-      const created = await api.create(session.token, title);
+      const created = await api.create(title, dueAt);
       setItems((prev) => prev.map((item) => (item.id === tempId ? created : item)));
-      pushToast("success", "Task added.");
     } catch (err) {
       setItems((prev) => prev.filter((item) => item.id !== tempId));
       setNewTitle(title);
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError(err.message);
-      }
+      setNewDueAt(newDueAt);
+      setError(err.message);
     } finally {
       setSubmitting(false);
     }
   };
 
   const onToggle = async (id) => {
-    if (!session?.token) return;
     setError("");
     const previous = items;
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: !item.status } : item))
-    );
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: !item.status } : item)));
 
     try {
-      await api.toggle(session.token, id);
-      pushToast("success", "Status updated.");
+      await api.toggle(id);
     } catch (err) {
       setItems(previous);
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     }
   };
 
   const onDelete = async (id) => {
-    if (!session?.token) return;
     setError("");
     const previous = items;
     setItems((prev) => prev.filter((item) => item.id !== id));
 
     try {
-      await api.remove(session.token, id);
-      pushToast("success", "Task deleted.");
+      await api.remove(id);
     } catch (err) {
       setItems(previous);
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     }
   };
 
   const onClearDone = async () => {
-    if (counts.done === 0 || !session?.token) return;
+    if (counts.done === 0) return;
+
     setError("");
     const previous = items;
     setItems((prev) => prev.filter((item) => !item.status));
 
     try {
-      await api.clearDone(session.token);
-      pushToast("success", "Done tasks cleared.");
+      await api.clearDone();
     } catch (err) {
       setItems(previous);
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
     }
   };
 
   const startEdit = (item) => {
     setEditingId(item.id);
     setEditTitle(item.title);
+    setEditDueAt(formatForDateTimeInput(item.dueAt));
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditTitle("");
+    setEditDueAt("");
   };
 
   const saveEdit = async (item) => {
-    if (!session?.token) return;
-
     const title = editTitle.trim();
     if (!title) {
       setError("Title cannot be empty.");
       return;
     }
+    const dueAt = normalizeDueAtInput(editDueAt);
 
     setError("");
-    setSavingEditId(item.id);
     const previous = items;
-    setItems((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, title } : entry)));
+    setItems((prev) =>
+      prev.map((entry) => (entry.id === item.id ? { ...entry, title, dueAt } : entry))
+    );
     setEditingId(null);
     setEditTitle("");
+    setEditDueAt("");
 
     try {
-      await api.update(session.token, item.id, { title, status: item.status });
-      pushToast("success", "Task updated.");
+      await api.update(item.id, { title, status: item.status, dueAt });
     } catch (err) {
       setItems(previous);
-      if (err.message.toLowerCase().includes("session")) {
-        forceLogout(err.message);
-      } else {
-        setError(err.message);
-      }
-    } finally {
-      setSavingEditId(null);
+      setError(err.message);
     }
   };
 
-  if (!session) {
-    return (
-      <main className="app-shell mode-corporate">
-        <section className="todo-panel auth-panel">
-          <header className="panel-top">
-            <p className="eyebrow">Task Board</p>
-            <h1 className="title">{authMode === "signup" ? "Create your account" : "Welcome back"}</h1>
-            <p className="subtitle">Sign in to get your own private dashboard.</p>
-            <div className="auth-suggestion">
-              {authMode === "signup"
-                ? "Suggestion: If you already have an account, switch to Log in."
-                : "Suggestion: If this is your first time, create an account using Sign up."}
-            </div>
-          </header>
-
-          <form className="composer" onSubmit={onAuthSubmit}>
-            <div className="input-wrap">
-              <input
-                className="task-input"
-                type="text"
-                placeholder="Username"
-                value={authForm.username}
-                onChange={(event) => setAuthForm((prev) => ({ ...prev, username: event.target.value }))}
-                maxLength={30}
-                autoComplete="username"
-              />
-            </div>
-            {authMode === "signup" ? (
-              <div className="input-wrap">
-                <input
-                  className="task-input"
-                  type="email"
-                  placeholder="Email"
-                  value={authForm.email}
-                  onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))}
-                  maxLength={120}
-                  autoComplete="email"
-                />
-              </div>
-            ) : null}
-            <div className="input-wrap">
-              <input
-                className="task-input"
-                type="password"
-                placeholder="Password"
-                value={authForm.password}
-                onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))}
-                maxLength={120}
-                autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-              />
-            </div>
-
-            <div className="toolbar auth-toolbar">
-              <button className="add-btn" type="submit" disabled={authLoading}>
-                {authLoading ? "Please wait..." : authMode === "signup" ? "Sign up" : "Log in"}
-              </button>
-            </div>
-            <p className="auth-switch">
-              {authMode === "signup" ? "Already have an account?" : "New here?"}{" "}
-              <button
-                className="auth-link"
-                type="button"
-                onClick={() => {
-                  setAuthMode((prev) => (prev === "signup" ? "login" : "signup"));
-                  setAuthError("");
-                }}
-              >
-                {authMode === "signup" ? "Log in" : "Sign up"}
-              </button>
-            </p>
-            {authError ? <div className="alert-inline">{authError}</div> : null}
-          </form>
-        </section>
-        <button
-          className="theme-fab"
-          type="button"
-          aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-          title={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-          onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-        >
-          {theme === "light" ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V4.5a.75.75 0 0 1 .75-.75ZM12 17.25a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V18a.75.75 0 0 1 .75-.75ZM4.5 11.25a.75.75 0 0 1 0 1.5H3a.75.75 0 0 1 0-1.5h1.5ZM21 11.25a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1 0-1.5H21ZM6.47 6.47a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06L6.47 7.53a.75.75 0 0 1 0-1.06ZM17.47 17.47a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06ZM18.53 6.47a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM7.53 17.47a.75.75 0 1 1 1.06 1.06l-1.06 1.06a.75.75 0 0 1-1.06-1.06l1.06-1.06ZM12 8.25a3.75 3.75 0 1 1 0 7.5 3.75 3.75 0 0 1 0-7.5Z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M13.24 2.25a.75.75 0 0 1 .64 1.13 8.25 8.25 0 1 0 6.74 10.8.75.75 0 0 1 1.4.53A9.75 9.75 0 1 1 12.71 2.9a.75.75 0 0 1 .53-.65Z" />
-            </svg>
-          )}
-        </button>
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell mode-corporate">
-      <nav className="top-nav">
-        <div className="nav-left">
-          <div className="brand-wrap">
-            <span className="brand-dot" />
-            <span className="brand-text">Task Desk</span>
-          </div>
-        </div>
-        <div className="nav-meta">
-          <span>{session.user.username}'s dashboard</span>
-          <span>{counts.total} tasks</span>
-          <button className="clear-btn" type="button" onClick={onLogout}>
-            Logout
-          </button>
-        </div>
-      </nav>
-
       <section className="todo-panel">
         <header className="panel-top">
-          <p className="eyebrow">Task Board</p>
-          <h1 className="title">Personal Workspace</h1>
-          <p className="subtitle">Only your tasks are shown here.</p>
+          <p className="eyebrow">Todo App</p>
+          <h1 className="title">Simple Task List</h1>
+          <p className="subtitle">Stay on top of your day.</p>
           <div className="summary-grid">
             <article className="summary-box">
               <p className="summary-label">Total</p>
@@ -490,7 +252,14 @@ export default function App() {
             </article>
             <article className="summary-box">
               <p className="summary-label">Progress</p>
-              <p className="summary-value">{progressPercent}%</p>
+              <div className="progress-wrap">
+                <p className="summary-value progress-value">{progressPercent}</p>
+                <span
+                  className="progress-ring"
+                  style={{ "--p": `${progressPercent}%` }}
+                  aria-label={`Progress ${progressPercent}%`}
+                />
+              </div>
             </article>
           </div>
         </header>
@@ -508,22 +277,20 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button
-            className="clear-btn"
-            type="button"
-            disabled={counts.done === 0}
-            onClick={onClearDone}
-          >
+          <button className="clear-btn" type="button" disabled={counts.done === 0} onClick={onClearDone}>
             Clear Done
           </button>
         </div>
 
         <form className="composer" onSubmit={onAdd}>
           <div className="search-wrap">
+            <svg className="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10.5 3a7.5 7.5 0 0 1 5.91 12.12l4.23 4.23a1 1 0 1 1-1.42 1.42l-4.23-4.23A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z" />
+            </svg>
             <input
               className="search-input"
               type="search"
-              placeholder="Search"
+              placeholder="Search a task by title"
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
             />
@@ -532,10 +299,17 @@ export default function App() {
             <input
               className="task-input"
               type="text"
-              placeholder="Add a task title"
+              placeholder="Add a task by title"
               value={newTitle}
               onChange={(event) => setNewTitle(event.target.value)}
               maxLength={120}
+            />
+            <input
+              className="task-input due-input"
+              type="datetime-local"
+              value={newDueAt}
+              onChange={(event) => setNewDueAt(event.target.value)}
+              aria-label="Due date and time"
             />
             <button className="add-btn" type="submit" disabled={submitting}>
               {submitting ? "Saving" : "Add"}
@@ -556,7 +330,6 @@ export default function App() {
                   className={`status-btn ${item.status ? "done" : ""}`}
                   type="button"
                   onClick={() => onToggle(item.id)}
-                  disabled={savingEditId === item.id}
                   aria-label={item.status ? "Mark as active" : "Mark as done"}
                 >
                   {item.status ? "OK" : "Do"}
@@ -582,6 +355,13 @@ export default function App() {
                       maxLength={120}
                       autoFocus
                     />
+                    <input
+                      className="edit-input due-input"
+                      type="datetime-local"
+                      value={editDueAt}
+                      onChange={(event) => setEditDueAt(event.target.value)}
+                      aria-label="Edit due date and time"
+                    />
                     <button className="mini-btn save" type="button" onClick={() => saveEdit(item)}>
                       Save
                     </button>
@@ -591,7 +371,10 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <p className={`task-title ${item.status ? "done" : ""}`}>{item.title}</p>
+                    <div className="task-main">
+                      <p className={`task-title ${item.status ? "done" : ""}`}>{item.title}</p>
+                      <p className="due-text">{formatDueAtDisplay(item.dueAt)}</p>
+                    </div>
                     <div className="row-actions">
                       <button className="mini-btn edit" type="button" onClick={() => startEdit(item)}>
                         Edit
@@ -607,31 +390,6 @@ export default function App() {
           </ul>
         )}
       </section>
-
-      <aside className="toast-stack" aria-live="polite" aria-atomic="true">
-        {toasts.map((toast) => (
-          <div key={toast.id} className={`toast-item ${toast.variant}`}>
-            {toast.message}
-          </div>
-        ))}
-      </aside>
-      <button
-        className="theme-fab"
-        type="button"
-        aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-        title={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-        onClick={() => setTheme((prev) => (prev === "light" ? "dark" : "light"))}
-      >
-        {theme === "light" ? (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3.75a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V4.5a.75.75 0 0 1 .75-.75ZM12 17.25a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V18a.75.75 0 0 1 .75-.75ZM4.5 11.25a.75.75 0 0 1 0 1.5H3a.75.75 0 0 1 0-1.5h1.5ZM21 11.25a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1 0-1.5H21ZM6.47 6.47a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06L6.47 7.53a.75.75 0 0 1 0-1.06ZM17.47 17.47a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06ZM18.53 6.47a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM7.53 17.47a.75.75 0 1 1 1.06 1.06l-1.06 1.06a.75.75 0 0 1-1.06-1.06l1.06-1.06ZM12 8.25a3.75 3.75 0 1 1 0 7.5 3.75 3.75 0 0 1 0-7.5Z" />
-          </svg>
-        ) : (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M13.24 2.25a.75.75 0 0 1 .64 1.13 8.25 8.25 0 1 0 6.74 10.8.75.75 0 0 1 1.4.53A9.75 9.75 0 1 1 12.71 2.9a.75.75 0 0 1 .53-.65Z" />
-          </svg>
-        )}
-      </button>
     </main>
   );
 }
