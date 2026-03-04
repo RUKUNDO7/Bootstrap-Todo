@@ -304,13 +304,19 @@ export default function App() {
               onChange={(event) => setNewTitle(event.target.value)}
               maxLength={120}
             />
-            <input
-              className="task-input due-input"
-              type="datetime-local"
-              value={newDueAt}
-              onChange={(event) => setNewDueAt(event.target.value)}
-              aria-label="Due date and time"
-            />
+            <div className="due-field">
+              <label className="field-label" htmlFor="new-due-at">
+                Due date and time
+              </label>
+              <input
+                id="new-due-at"
+                className="task-input due-input"
+                type="datetime-local"
+                value={newDueAt}
+                onChange={(event) => setNewDueAt(event.target.value)}
+                aria-label="Due date and time"
+              />
+            </div>
             <button className="add-btn" type="submit" disabled={submitting}>
               {submitting ? "Saving" : "Add"}
             </button>
@@ -355,13 +361,19 @@ export default function App() {
                       maxLength={120}
                       autoFocus
                     />
-                    <input
-                      className="edit-input due-input"
-                      type="datetime-local"
-                      value={editDueAt}
-                      onChange={(event) => setEditDueAt(event.target.value)}
-                      aria-label="Edit due date and time"
-                    />
+                    <div className="due-field">
+                      <label className="field-label" htmlFor={`edit-due-at-${item.id}`}>
+                        Due date and time
+                      </label>
+                      <input
+                        id={`edit-due-at-${item.id}`}
+                        className="edit-input due-input"
+                        type="datetime-local"
+                        value={editDueAt}
+                        onChange={(event) => setEditDueAt(event.target.value)}
+                        aria-label="Edit due date and time"
+                      />
+                    </div>
                     <button className="mini-btn save" type="button" onClick={() => saveEdit(item)}>
                       Save
                     </button>
@@ -376,11 +388,27 @@ export default function App() {
                       <p className="due-text">{formatDueAtDisplay(item.dueAt)}</p>
                     </div>
                     <div className="row-actions">
-                      <button className="mini-btn edit" type="button" onClick={() => startEdit(item)}>
-                        Edit
+                      <button
+                        className="icon-action edit"
+                        type="button"
+                        onClick={() => startEdit(item)}
+                        aria-label="Edit task"
+                        data-tooltip="Edit"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25Zm2.92 2.33H5v-.92l9.06-9.06.92.92L5.92 19.58ZM20.7 7.04a1 1 0 0 0 0-1.41L18.37 3.3a1 1 0 0 0-1.41 0l-1.52 1.52 3.75 3.75 1.51-1.53Z" />
+                        </svg>
                       </button>
-                      <button className="delete-btn" type="button" onClick={() => onDelete(item.id)}>
-                        Delete
+                      <button
+                        className="icon-action delete"
+                        type="button"
+                        onClick={() => onDelete(item.id)}
+                        aria-label="Delete task"
+                        data-tooltip="Delete"
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 6h2v9h-2V9Zm4 0h2v9h-2V9ZM7 9h2v9H7V9Zm-1 12h12a2 2 0 0 0 2-2V8H4v11a2 2 0 0 0 2 2Z" />
+                        </svg>
                       </button>
                     </div>
                   </>
